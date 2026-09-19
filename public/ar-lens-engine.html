@@ -341,32 +341,12 @@
         return sceneEl.systems["mindar-image-system"];
       }
 
-      function applyWKWebViewVideoFixes(arSystem) {
-        if (arSystem && arSystem.video) {
-          const v = arSystem.video;
-          v.setAttribute('playsinline', '');
-          v.setAttribute('webkit-playsinline', '');
-          v.muted = true;
-          v.style.position = 'fixed';
-          v.style.top = '0px';
-          v.style.left = '0px';
-          v.style.width = '100vw';
-          v.style.height = '100vh';
-          v.style.objectFit = 'cover';
-          v.style.zIndex = '-2';
-          v.style.display = 'block';
-          v.style.visibility = 'visible';
-          v.play().catch(e => console.log("Video play note:", e));
-        }
-      }
-
       async function startCameraScanner() {
         try {
           const arSystem = await getArSystem();
           if (arSystem) {
             if (iosOverlay) iosOverlay.style.display = 'none';
             await arSystem.start();
-            applyWKWebViewVideoFixes(arSystem);
             console.log("MindAR Camera initialized successfully!");
           }
         } catch (err) {
@@ -374,19 +354,6 @@
           alert("Camera Permission Error: Please allow camera access in your browser settings and try again.");
         }
       }
-
-      // Attempt automatic start on page load (works on Chrome Android & desktop)
-      sceneEl.addEventListener('loaded', () => {
-        const arSystem = sceneEl.systems["mindar-image-system"];
-        if (arSystem) {
-          arSystem.start().then(() => {
-            if (iosOverlay) iosOverlay.style.display = 'none';
-            applyWKWebViewVideoFixes(arSystem);
-          }).catch(err => {
-            console.log("Auto-start waiting for user tap gesture (Safari/iOS requirement):", err);
-          });
-        }
-      });
 
       if (startArBtn) {
         startArBtn.addEventListener('click', startCameraScanner);
