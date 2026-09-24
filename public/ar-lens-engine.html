@@ -274,7 +274,7 @@
     device-orientation-permission-ui="enabled: false"
   >
     <a-assets id="scene-assets">
-      <video id="ar-video-stream" src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted></video>
+      <video id="ar-video-stream" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted></video>
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
@@ -314,6 +314,26 @@
       const exitScannerBtn = document.getElementById('exit-scanner-btn');
       const videoStream = document.getElementById('ar-video-stream');
 
+      // Video Diagnostics
+      if (videoStream) {
+        const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'pause', 'error', 'stalled', 'abort', 'emptied'];
+        events.forEach(evt => {
+          videoStream.addEventListener(evt, (e) => {
+            console.log(`[Video Event] ${evt}`, videoStream.readyState);
+            if (evt === 'error') {
+              console.error("Video Error Details:", {
+                code: videoStream.error?.code,
+                message: videoStream.error?.message,
+                currentSrc: videoStream.currentSrc,
+                readyState: videoStream.readyState,
+                networkState: videoStream.networkState
+              });
+              alert("The video could not be loaded. Please check that the uploaded video is publicly accessible and in a supported format.");
+            }
+          });
+        });
+      }
+
       // Check active video
       const urlParams = new URLSearchParams(window.location.search);
       let activeMediaUrl = urlParams.get('mediaUrl') || urlParams.get('videoUrl');
@@ -351,7 +371,7 @@
           }
         } catch (err) {
           console.error("Camera access error:", err);
-          alert("Camera Permission Error: Please allow camera access in your browser settings and try again.");
+          alert("Camera could not start. Please check browser camera permissions and use HTTPS.");
         }
       }
 
@@ -373,14 +393,14 @@
           if (laser) laser.style.display = 'none';
           toast.style.display = 'flex';
 
-          if (videoStream) {
+          if (videoStream && videoStream.getAttribute('src')) {
             videoStream.play().catch(e => console.log("Video play note:", e));
           }
         });
 
         targetEntity.addEventListener("targetLost", () => {
           statusDot.classList.remove('found');
-          statusText.innerText = "Scanning Photo Print...";
+          statusText.innerText = "Camera is active. Point your camera at the target image.";
           reticle.classList.remove('found');
           if (laser) laser.style.display = 'block';
           toast.style.display = 'none';

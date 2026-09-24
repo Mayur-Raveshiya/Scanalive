@@ -51,8 +51,13 @@ export default function MediaManagerModal({ isOpen, onClose, user, onSelectMedia
   const handleFileChange = (e) => {
     const selected = e.target.files[0];
     if (selected) {
-      setFile(selected);
       const isVid = selected.type.startsWith('video');
+      if (isVid && !['video/mp4', 'video/webm'].includes(selected.type)) {
+        setErrorMessage('Unsupported video format. Please select an MP4 or WEBM video.');
+        return;
+      }
+      setErrorMessage('');
+      setFile(selected);
       setMediaType(isVid ? 'video' : 'image');
       setFilePreview(URL.createObjectURL(selected));
       if (!title) {

@@ -46,6 +46,10 @@ export default function LiveMemoriesApp() {
   const handleVideoChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      if (!['video/mp4', 'video/webm'].includes(file.type)) {
+        alert('Unsupported video format. Please select an MP4 or WEBM video.');
+        return;
+      }
       setVideoFile(file);
       const url = URL.createObjectURL(file);
       setVideoPreview(url);
@@ -57,22 +61,24 @@ export default function LiveMemoriesApp() {
   };
 
   const openCameraScanner = (mediaObj = null) => {
-    let videoUrlToUse = mediaObj?.video_url || mediaObj?.media_url || videoPreview || customVideoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+    let videoUrlToUse = mediaObj?.video_url || mediaObj?.media_url || videoPreview || customVideoUrl || '';
     let titleToUse = mediaObj?.title || customTitle || 'LiveMemories Video Overlay';
 
     if (typeof window !== 'undefined') {
-      localStorage.setItem('ACTIVE_AR_MEDIA', JSON.stringify({
-        media_url: videoUrlToUse,
-        media_type: 'video',
-        title: titleToUse
-      }));
+      if (videoUrlToUse) {
+        localStorage.setItem('ACTIVE_AR_MEDIA', JSON.stringify({
+          media_url: videoUrlToUse,
+          media_type: 'video',
+          title: titleToUse
+        }));
+      }
 
-      window.location.href = `/ar-lens-engine.html?videoUrl=${encodeURIComponent(videoUrlToUse)}&title=${encodeURIComponent(titleToUse)}`;
+      window.location.href = `/ar-lens-engine.html${videoUrlToUse ? `?videoUrl=${encodeURIComponent(videoUrlToUse)}&title=${encodeURIComponent(titleToUse)}` : ''}`;
     }
   };
 
   const handleRegisterAndLaunchAR = async () => {
-    const finalVideoUrl = videoPreview || customVideoUrl || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+    const finalVideoUrl = videoPreview || customVideoUrl || '';
     const finalPhotoUrl = targetImagePreview || '/targets/sample-target-1.png';
     const finalTitle = customTitle || 'LiveMemories Video Overlay';
 
