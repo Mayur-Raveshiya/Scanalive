@@ -1,21 +1,55 @@
 import Head from 'next/head';
-import Script from 'next/script';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function ARLensEngine() {
+  const [scriptsLoaded, setScriptsLoaded] = useState(false);
+  const [isStarted, setIsStarted] = useState(false);
+  const [isFound, setIsFound] = useState(false);
+
+  // 1 & 2 & 3 & 4. Dynamically load A-Frame and MindAR, then set scriptsLoaded
   useEffect(() => {
-    const sceneEl = document.querySelector('a-scene');
-    const startArBtn = document.getElementById('start-ar-btn');
-    const iosOverlay = document.getElementById('ios-start-overlay');
-    const targetEntity = document.querySelector('#target-entity-0');
-    const statusDot = document.getElementById('status-dot');
-    const statusText = document.getElementById('status-text');
-    const reticle = document.getElementById('reticle');
-    const laser = document.getElementById('laser');
-    const toast = document.getElementById('target-toast');
-    const cameraFlipBtn = document.getElementById('camera-flip-btn');
-    const exitScannerBtn = document.getElementById('exit-scanner-btn');
+    let isMounted = true;
+    
+    const loadScript = (src) => {
+      return new Promise((resolve, reject) => {
+        if (document.querySelector(`script[src="${src}"]`)) {
+          resolve();
+          return;
+        }
+        const script = document.createElement('script');
+        script.src = src;
+        script.async = false; // Preserve execution order
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    };
+
+    const initScripts = async () => {
+      try {
+        await loadScript("https://aframe.io/releases/1.5.0/aframe.min.js");
+        await loadScript("https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js");
+        if (isMounted) {
+          setScriptsLoaded(true);
+        }
+      } catch (err) {
+        console.error("Error loading AR scripts", err);
+      }
+    };
+
+    initScripts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // 9. Video handling and Target Events
+  useEffect(() => {
+    if (!scriptsLoaded) return;
+
     const videoStream = document.getElementById('ar-video-stream');
+    const targetEntity = document.getElementById('target-entity-0');
 
     if (videoStream) {
       const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'pause', 'error', 'stalled', 'abort', 'emptied'];
@@ -34,93 +68,88 @@ export default function ARLensEngine() {
           }
         });
       });
+
+      const urlParams = new URLSearchParams(window.location.search);
+      let activeMediaUrl = urlParams.get('mediaUrl') || urlParams.get('videoUrl');
+
+      if (!activeMediaUrl) {
+        try {
+          const stored = localStorage.getItem('ACTIVE_AR_MEDIA');
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            activeMediaUrl = parsed.media_url || parsed.video_url;
+          }
+        } catch (e) {}
+      }
+
+      if (activeMediaUrl) {
+        videoStream.setAttribute('src', activeMediaUrl);
+        videoStream.load();
+      }
     }
 
-    const urlParams = new URLSearchParams(window.location.search);
-    let activeMediaUrl = urlParams.get('mediaUrl') || urlParams.get('videoUrl');
+    const handleTargetFound = () => {
+      setIsFound(true);
+      if (videoStream && videoStream.getAttribute('src')) {
+        videoStream.play().catch(e => console.log('Video play note:', e));
+      }
+    };
 
-    if (!activeMediaUrl) {
-      try {
-        const stored = localStorage.getItem('ACTIVE_AR_MEDIA');
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          activeMediaUrl = parsed.media_url || parsed.video_url;
-        }
-      } catch (e) {}
+    const handleTargetLost = () => {
+      setIsFound(false);
+      if (videoStream) {
+        videoStream.pause();
+      }
+    };
+
+    if (targetEntity) {
+      targetEntity.addEventListener('targetFound', handleTargetFound);
+      targetEntity.addEventListener('targetLost', handleTargetLost);
     }
 
-    if (activeMediaUrl && videoStream) {
-      videoStream.setAttribute('src', activeMediaUrl);
-      videoStream.load();
-    }
+    // Cleanup listeners
+    return () => {
+      if (targetEntity) {
+        targetEntity.removeEventListener('targetFound', handleTargetFound);
+        targetEntity.removeEventListener('targetLost', handleTargetLost);
+      }
+    };
+  }, [scriptsLoaded]);
 
-    async function getArSystem() {
-      if (!sceneEl) return null;
+  // 8 & 10. Start camera scanner
+  const startCameraScanner = async () => {
+    try {
+      const sceneEl = document.getElementById('ar-scene');
+      if (!sceneEl) return;
+      
+      // Wait for A-Frame's loaded event if necessary
       if (!sceneEl.hasLoaded) {
         await new Promise(resolve => sceneEl.addEventListener('loaded', resolve, { once: true }));
       }
-      return sceneEl.systems['mindar-image-system'];
-    }
-
-    async function startCameraScanner() {
-      try {
-        const arSystem = await getArSystem();
-        if (arSystem) {
-          if (iosOverlay) iosOverlay.style.display = 'none';
-          await arSystem.start();
-          console.log('MindAR Camera initialized successfully!');
-        }
-      } catch (err) {
-        console.error('Camera access error:', err);
-        alert('Camera could not start. Please check browser camera permissions and use HTTPS.');
+      
+      // Obtain the scene element system
+      const arSystem = sceneEl.systems['mindar-image-system'];
+      if (arSystem) {
+        setIsStarted(true);
+        await arSystem.start();
+        console.log('MindAR Camera initialized successfully!');
       }
+    } catch (err) {
+      console.error('Camera access error:', err);
+      alert('Camera could not start. Please check browser camera permissions and use HTTPS.');
     }
+  };
 
-    if (startArBtn) {
-      startArBtn.addEventListener('click', startCameraScanner);
+  const switchCamera = async () => {
+    const sceneEl = document.getElementById('ar-scene');
+    if (sceneEl && sceneEl.systems['mindar-image-system']) {
+      sceneEl.systems['mindar-image-system'].switchCamera();
     }
+  };
 
-    if (exitScannerBtn) {
-      exitScannerBtn.addEventListener('click', () => {
-        window.location.href = '/';
-      });
-    }
-
-    if (targetEntity) {
-      targetEntity.addEventListener('targetFound', () => {
-        if(statusDot) statusDot.classList.add('found');
-        if(statusText) statusText.innerText = 'Photo Lock Acquired! [LiveMemories Playing]';
-        if(reticle) reticle.classList.add('found');
-        if(laser) laser.style.display = 'none';
-        if(toast) toast.style.display = 'flex';
-
-        if (videoStream && videoStream.getAttribute('src')) {
-          videoStream.play().catch(e => console.log('Video play note:', e));
-        }
-      });
-
-      targetEntity.addEventListener('targetLost', () => {
-        if(statusDot) statusDot.classList.remove('found');
-        if(statusText) statusText.innerText = 'Camera is active. Point your camera at the target image.';
-        if(reticle) reticle.classList.remove('found');
-        if(laser) laser.style.display = 'block';
-        if(toast) toast.style.display = 'none';
-
-        if (videoStream) {
-          videoStream.pause();
-        }
-      });
-    }
-
-    if (cameraFlipBtn) {
-      cameraFlipBtn.addEventListener('click', async () => {
-        const arSystem = await getArSystem();
-        if (arSystem) {
-          arSystem.switchCamera();
-        }
-      });
-    }
-  }, []);
+  const exitScanner = () => {
+    window.location.href = '/';
+  };
 
   return (
     <>
@@ -128,8 +157,6 @@ export default function ARLensEngine() {
         <title>LiveMemories WebAR Camera Scanner</title>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
       </Head>
-      <Script src="https://aframe.io/releases/1.5.0/aframe.min.js" strategy="beforeInteractive" />
-      <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
       
       <style dangerouslySetInnerHTML={{__html: `
         :root {
@@ -337,83 +364,91 @@ export default function ARLensEngine() {
           max-width: 90vw;
         }
       `}} />
-      <div dangerouslySetInnerHTML={{__html: `
+
+      {!isStarted && (
         <div id="ios-start-overlay">
-          <div style="width: 72px; height: 72px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); display: flex; align-items: center; justify-content: center; margin-bottom: 18px;">
-            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          <div style={{width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '18px'}}>
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
           </div>
-          <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; font-family: serif;">LiveMemories AR Camera</h2>
-          <p style="color: #94a3b8; font-size: 15px; line-height: 1.5; max-width: 340px;">
+          <h2 style={{fontSize: '24px', fontWeight: '800', marginBottom: '10px', fontFamily: 'serif'}}>LiveMemories AR Camera</h2>
+          <p style={{color: '#94a3b8', fontSize: '15px', lineHeight: '1.5', maxWidth: '340px'}}>
             Tap below to start your iPhone camera and scan physical photos to play videos.
           </p>
-          <button id="start-ar-btn" class="start-cam-btn">
+          <button id="start-ar-btn" className="start-cam-btn" onClick={startCameraScanner}>
             📷 Start iPhone Camera Scanner
           </button>
         </div>
+      )}
 
+      {isStarted && (
         <div id="ar-hud-overlay">
-          <div class="hud-header">
-            <button id="exit-scanner-btn" class="back-home-btn">✕ Exit</button>
+          <div className="hud-header">
+            <button id="exit-scanner-btn" className="back-home-btn" onClick={exitScanner}>✕ Exit</button>
 
-            <div class="status-pill">
-              <div id="status-dot" class="status-dot"></div>
-              <span id="status-text">Scanning Photo Print...</span>
+            <div className="status-pill">
+              <div id="status-dot" className={`status-dot ${isFound ? 'found' : ''}`}></div>
+              <span id="status-text">{isFound ? 'Photo Lock Acquired! [LiveMemories Playing]' : 'Scanning Photo Print...'}</span>
             </div>
 
-            <button id="camera-flip-btn" class="camera-switch-btn" title="Flip Camera">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <button id="camera-flip-btn" className="camera-switch-btn" title="Flip Camera" onClick={switchCamera}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M20 10c0-4.4-3.6-8-8-8s-8 3.6-8 8h-3l4 4 4-4h-3c0-3.3 2.7-6 6-6s6 2.7 6 6h3z"/>
                 <path d="M4 14c0 4.4 3.6 8 8 8s8-3.6 8-8h3l-4-4-4 4h3c0 3.3-2.7 6-6 6s-6-2.7-6-6h-3z"/>
               </svg>
             </button>
           </div>
 
-          <div id="reticle" class="scanner-reticle">
-            <div class="corner tl"></div>
-            <div class="corner tr"></div>
-            <div class="corner bl"></div>
-            <div class="corner br"></div>
-            <div id="laser" class="laser-line"></div>
+          <div id="reticle" className={`scanner-reticle ${isFound ? 'found' : ''}`}>
+            <div className="corner tl"></div>
+            <div className="corner tr"></div>
+            <div className="corner bl"></div>
+            <div className="corner br"></div>
+            {!isFound && <div id="laser" className="laser-line"></div>}
           </div>
 
-          <div id="target-toast">
+          <div id="target-toast" style={{ display: isFound ? 'flex' : 'none' }}>
             <span>✨ LIVEMEMORIES MATCH — Playing Video</span>
           </div>
         </div>
+      )}
 
-        <a-scene 
-          mindar-image="imageTargetSrc: /targets/targets.mind; autoStart: false; filterMinCF: 0.00001; filterBeta: 0.0001; missTolerance: 18; warmupTolerance: 3; uiScanning: #reticle; uiLoading: no;" 
-          color-space="sRGB" 
-          renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
-          vr-mode-ui="enabled: false" 
-          device-orientation-permission-ui="enabled: false"
-        >
-          <a-assets id="scene-assets">
-            <video id="ar-video-stream" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted></video>
-          </a-assets>
+      {scriptsLoaded && (
+        <div dangerouslySetInnerHTML={{__html: `
+          <a-scene 
+            id="ar-scene"
+            mindar-image="imageTargetSrc: /targets/targets.mind; autoStart: false; filterMinCF: 0.00001; filterBeta: 0.0001; missTolerance: 18; warmupTolerance: 3; uiScanning: #reticle; uiLoading: no;" 
+            color-space="sRGB" 
+            renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
+            vr-mode-ui="enabled: false" 
+            device-orientation-permission-ui="enabled: false"
+          >
+            <a-assets id="scene-assets">
+              <video id="ar-video-stream" loop crossorigin="anonymous" playsinline webkit-playsinline muted></video>
+            </a-assets>
 
-          <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+            <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-          <a-entity id="target-entity-0" mindar-image-target="targetIndex: 0">
-            <a-video id="ar-video-plane" src="#ar-video-stream" position="0 0 0.05" width="1" height="0.75" rotation="0 0 0"></a-video>
+            <a-entity id="target-entity-0" mindar-image-target="targetIndex: 0">
+              <a-video id="ar-video-plane" src="#ar-video-stream" position="0 0 0.05" width="1" height="0.75" rotation="0 0 0"></a-video>
 
-            <a-torus position="0 0 0.1" radius="0.48" radius-tubular="0.015" material="color: #10b981; metalness: 0.8; opacity: 0.85; transparent: true"
-                     animation="property: rotation; to: 0 360 360; loop: true; dur: 6000; easing: linear">
-            </a-torus>
+              <a-torus position="0 0 0.1" radius="0.48" radius-tubular="0.015" material="color: #10b981; metalness: 0.8; opacity: 0.85; transparent: true"
+                       animation="property: rotation; to: 0 360 360; loop: true; dur: 6000; easing: linear">
+              </a-torus>
 
-            <a-octahedron position="0 0 0.2" radius="0.18" material="color: #9fdbcc; wireframe: true; wireframeLinewidth: 2"
-                          animation="property: rotation; to: 360 360 0; loop: true; dur: 4000; easing: linear">
-            </a-octahedron>
+              <a-octahedron position="0 0 0.2" radius="0.18" material="color: #9fdbcc; wireframe: true; wireframeLinewidth: 2"
+                            animation="property: rotation; to: 360 360 0; loop: true; dur: 4000; easing: linear">
+              </a-octahedron>
 
-            <a-text id="ar-title-text" value="LIVEMEMORIES VIDEO ACTIVE" position="0 -0.65 0.1" align="center" width="2.2" color="#10b981"
-                    font="kelsonsans"
-                    animation="property: position; to: 0 -0.6 0.15; dir: alternate; loop: true; dur: 1500; easing: easeInOutSine">
-            </a-text>
+              <a-text id="ar-title-text" value="LIVEMEMORIES VIDEO ACTIVE" position="0 -0.65 0.1" align="center" width="2.2" color="#10b981"
+                      font="kelsonsans"
+                      animation="property: position; to: 0 -0.6 0.15; dir: alternate; loop: true; dur: 1500; easing: easeInOutSine">
+              </a-text>
 
-            <a-light type="point" color="#10b981" intensity="2.5" distance="3" position="0 0 0.5"></a-light>
-          </a-entity>
-        </a-scene>
-      `}} />
+              <a-light type="point" color="#10b981" intensity="2.5" distance="3" position="0 0 0.5"></a-light>
+            </a-entity>
+          </a-scene>
+        `}} />
+      )}
     </>
   );
 }
