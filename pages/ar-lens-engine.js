@@ -1,0 +1,419 @@
+import Head from 'next/head';
+import Script from 'next/script';
+import { useEffect } from 'react';
+
+export default function ARLensEngine() {
+  useEffect(() => {
+    const sceneEl = document.querySelector('a-scene');
+    const startArBtn = document.getElementById('start-ar-btn');
+    const iosOverlay = document.getElementById('ios-start-overlay');
+    const targetEntity = document.querySelector('#target-entity-0');
+    const statusDot = document.getElementById('status-dot');
+    const statusText = document.getElementById('status-text');
+    const reticle = document.getElementById('reticle');
+    const laser = document.getElementById('laser');
+    const toast = document.getElementById('target-toast');
+    const cameraFlipBtn = document.getElementById('camera-flip-btn');
+    const exitScannerBtn = document.getElementById('exit-scanner-btn');
+    const videoStream = document.getElementById('ar-video-stream');
+
+    if (videoStream) {
+      const events = ['loadstart', 'loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough', 'play', 'pause', 'error', 'stalled', 'abort', 'emptied'];
+      events.forEach(evt => {
+        videoStream.addEventListener(evt, (e) => {
+          console.log(`[Video Event] ${evt}`, videoStream.readyState);
+          if (evt === 'error') {
+            console.error('Video Error Details:', {
+              code: videoStream.error?.code,
+              message: videoStream.error?.message,
+              currentSrc: videoStream.currentSrc,
+              readyState: videoStream.readyState,
+              networkState: videoStream.networkState
+            });
+            alert('The video could not be loaded. Please check that the uploaded video is publicly accessible and in a supported format.');
+          }
+        });
+      });
+    }
+
+    const urlParams = new URLSearchParams(window.location.search);
+    let activeMediaUrl = urlParams.get('mediaUrl') || urlParams.get('videoUrl');
+
+    if (!activeMediaUrl) {
+      try {
+        const stored = localStorage.getItem('ACTIVE_AR_MEDIA');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          activeMediaUrl = parsed.media_url || parsed.video_url;
+        }
+      } catch (e) {}
+    }
+
+    if (activeMediaUrl && videoStream) {
+      videoStream.setAttribute('src', activeMediaUrl);
+      videoStream.load();
+    }
+
+    async function getArSystem() {
+      if (!sceneEl) return null;
+      if (!sceneEl.hasLoaded) {
+        await new Promise(resolve => sceneEl.addEventListener('loaded', resolve, { once: true }));
+      }
+      return sceneEl.systems['mindar-image-system'];
+    }
+
+    async function startCameraScanner() {
+      try {
+        const arSystem = await getArSystem();
+        if (arSystem) {
+          if (iosOverlay) iosOverlay.style.display = 'none';
+          await arSystem.start();
+          console.log('MindAR Camera initialized successfully!');
+        }
+      } catch (err) {
+        console.error('Camera access error:', err);
+        alert('Camera could not start. Please check browser camera permissions and use HTTPS.');
+      }
+    }
+
+    if (startArBtn) {
+      startArBtn.addEventListener('click', startCameraScanner);
+    }
+
+    if (exitScannerBtn) {
+      exitScannerBtn.addEventListener('click', () => {
+        window.location.href = '/';
+      });
+    }
+
+    if (targetEntity) {
+      targetEntity.addEventListener('targetFound', () => {
+        if(statusDot) statusDot.classList.add('found');
+        if(statusText) statusText.innerText = 'Photo Lock Acquired! [LiveMemories Playing]';
+        if(reticle) reticle.classList.add('found');
+        if(laser) laser.style.display = 'none';
+        if(toast) toast.style.display = 'flex';
+
+        if (videoStream && videoStream.getAttribute('src')) {
+          videoStream.play().catch(e => console.log('Video play note:', e));
+        }
+      });
+
+      targetEntity.addEventListener('targetLost', () => {
+        if(statusDot) statusDot.classList.remove('found');
+        if(statusText) statusText.innerText = 'Camera is active. Point your camera at the target image.';
+        if(reticle) reticle.classList.remove('found');
+        if(laser) laser.style.display = 'block';
+        if(toast) toast.style.display = 'none';
+
+        if (videoStream) {
+          videoStream.pause();
+        }
+      });
+    }
+
+    if (cameraFlipBtn) {
+      cameraFlipBtn.addEventListener('click', async () => {
+        const arSystem = await getArSystem();
+        if (arSystem) {
+          arSystem.switchCamera();
+        }
+      });
+    }
+  }, []);
+
+  return (
+    <>
+      <Head>
+        <title>LiveMemories WebAR Camera Scanner</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+      </Head>
+      <Script src="https://aframe.io/releases/1.5.0/aframe.min.js" strategy="beforeInteractive" />
+      <Script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js" strategy="beforeInteractive" />
+      
+      <style dangerouslySetInnerHTML={{__html: `
+        :root {
+          --sat: env(safe-area-inset-top, 0px);
+          --sab: env(safe-area-inset-bottom, 0px);
+        }
+
+        html, body {
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          height: 100%;
+          height: 100dvh;
+          overflow: hidden;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          background-color: transparent !important;
+          background: transparent !important;
+          -webkit-tap-highlight-color: transparent;
+        }
+
+        .a-canvas {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+          background-color: transparent !important;
+          background: transparent !important;
+        }
+
+        #ios-start-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 999999;
+          background: rgba(7, 10, 18, 0.96);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 24px;
+          text-align: center;
+          color: #fff;
+        }
+
+        .start-cam-btn {
+          margin-top: 24px;
+          padding: 18px 38px;
+          border-radius: 40px;
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          color: #fff;
+          font-size: 17px;
+          font-weight: 800;
+          border: none;
+          box-shadow: 0 0 35px rgba(16, 185, 129, 0.5);
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          touch-action: manipulation;
+        }
+
+        #ar-hud-overlay {
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          z-index: 999;
+          display: flex;
+          flex-direction: column;
+          justify-content: space-between;
+          padding: max(16px, var(--sat)) 16px max(24px, var(--sab)) 16px;
+        }
+
+        .hud-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 10px;
+        }
+
+        .back-home-btn {
+          pointer-events: auto;
+          background: rgba(244, 63, 94, 0.85);
+          backdrop-filter: blur(14px);
+          border: none;
+          color: #fff;
+          padding: 10px 18px;
+          border-radius: 30px;
+          font-weight: 700;
+          font-size: 13px;
+          cursor: pointer;
+          box-shadow: 0 4px 15px rgba(244, 63, 94, 0.4);
+        }
+
+        .status-pill {
+          pointer-events: auto;
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 14px;
+          border-radius: 20px;
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(14px);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          color: #fff;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .status-dot {
+          width: 8px;
+          height: 8px;
+          border-radius: 50%;
+          background: #f59e0b;
+          box-shadow: 0 0 10px #f59e0b;
+          flex-shrink: 0;
+        }
+
+        .status-dot.found {
+          background: #10b981;
+          box-shadow: 0 0 12px #10b981;
+        }
+
+        .camera-switch-btn {
+          pointer-events: auto;
+          background: rgba(15, 23, 42, 0.85);
+          backdrop-filter: blur(14px);
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          color: #fff;
+          width: 40px;
+          height: 40px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          cursor: pointer;
+        }
+
+        .scanner-reticle {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: min(290px, 75vw);
+          height: min(290px, 75vw);
+          border: 2px solid rgba(16, 185, 129, 0.4);
+          border-radius: 24px;
+          pointer-events: none;
+          box-shadow: 0 0 35px rgba(16, 185, 129, 0.2);
+          transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .scanner-reticle.found {
+          border-color: #10b981;
+          box-shadow: 0 0 50px rgba(16, 185, 129, 0.55);
+          transform: translate(-50%, -50%) scale(1.04);
+        }
+
+        .corner {
+          position: absolute;
+          width: 22px;
+          height: 22px;
+          border-color: #10b981;
+          border-style: solid;
+        }
+
+        .tl { top: -2px; left: -2px; border-width: 4px 0 0 4px; border-top-left-radius: 18px; }
+        .tr { top: -2px; right: -2px; border-width: 4px 4px 0 0; border-top-right-radius: 18px; }
+        .bl { bottom: -2px; left: -2px; border-width: 0 0 4px 4px; border-bottom-left-radius: 18px; }
+        .br { bottom: -2px; right: -2px; border-width: 0 4px 4px 0; border-bottom-right-radius: 18px; }
+
+        .laser-line {
+          position: absolute;
+          left: 8px;
+          right: 8px;
+          height: 2px;
+          background: linear-gradient(90deg, transparent, #10b981, #9fdbcc, transparent);
+          box-shadow: 0 0 14px #10b981;
+          animation: scanAnim 2.2s ease-in-out infinite alternate;
+        }
+
+        @keyframes scanAnim {
+          0% { top: 10%; opacity: 0.2; }
+          50% { opacity: 1; }
+          100% { top: 90%; opacity: 0.2; }
+        }
+
+        #target-toast {
+          position: absolute;
+          bottom: max(30px, var(--sab));
+          left: 50%;
+          transform: translateX(-50%);
+          background: rgba(16, 185, 129, 0.95);
+          color: #fff;
+          padding: 10px 22px;
+          border-radius: 30px;
+          font-size: 13px;
+          font-weight: 700;
+          letter-spacing: 0.3px;
+          backdrop-filter: blur(12px);
+          box-shadow: 0 0 25px rgba(16, 185, 129, 0.5);
+          display: none;
+          align-items: center;
+          gap: 8px;
+          white-space: nowrap;
+          max-width: 90vw;
+        }
+      `}} />
+      <div dangerouslySetInnerHTML={{__html: `
+        <div id="ios-start-overlay">
+          <div style="width: 72px; height: 72px; border-radius: 50%; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); display: flex; align-items: center; justify-content: center; margin-bottom: 18px;">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </div>
+          <h2 style="font-size: 24px; font-weight: 800; margin-bottom: 10px; font-family: serif;">LiveMemories AR Camera</h2>
+          <p style="color: #94a3b8; font-size: 15px; line-height: 1.5; max-width: 340px;">
+            Tap below to start your iPhone camera and scan physical photos to play videos.
+          </p>
+          <button id="start-ar-btn" class="start-cam-btn">
+            📷 Start iPhone Camera Scanner
+          </button>
+        </div>
+
+        <div id="ar-hud-overlay">
+          <div class="hud-header">
+            <button id="exit-scanner-btn" class="back-home-btn">✕ Exit</button>
+
+            <div class="status-pill">
+              <div id="status-dot" class="status-dot"></div>
+              <span id="status-text">Scanning Photo Print...</span>
+            </div>
+
+            <button id="camera-flip-btn" class="camera-switch-btn" title="Flip Camera">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 10c0-4.4-3.6-8-8-8s-8 3.6-8 8h-3l4 4 4-4h-3c0-3.3 2.7-6 6-6s6 2.7 6 6h3z"/>
+                <path d="M4 14c0 4.4 3.6 8 8 8s8-3.6 8-8h3l-4-4-4 4h3c0 3.3-2.7 6-6 6s-6-2.7-6-6h-3z"/>
+              </svg>
+            </button>
+          </div>
+
+          <div id="reticle" class="scanner-reticle">
+            <div class="corner tl"></div>
+            <div class="corner tr"></div>
+            <div class="corner bl"></div>
+            <div class="corner br"></div>
+            <div id="laser" class="laser-line"></div>
+          </div>
+
+          <div id="target-toast">
+            <span>✨ LIVEMEMORIES MATCH — Playing Video</span>
+          </div>
+        </div>
+
+        <a-scene 
+          mindar-image="imageTargetSrc: /targets/targets.mind; autoStart: false; filterMinCF: 0.00001; filterBeta: 0.0001; missTolerance: 18; warmupTolerance: 3; uiScanning: #reticle; uiLoading: no;" 
+          color-space="sRGB" 
+          renderer="colorManagement: true, physicallyCorrectLights: true, alpha: true" 
+          vr-mode-ui="enabled: false" 
+          device-orientation-permission-ui="enabled: false"
+        >
+          <a-assets id="scene-assets">
+            <video id="ar-video-stream" loop="true" crossorigin="anonymous" playsinline webkit-playsinline muted></video>
+          </a-assets>
+
+          <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+          <a-entity id="target-entity-0" mindar-image-target="targetIndex: 0">
+            <a-video id="ar-video-plane" src="#ar-video-stream" position="0 0 0.05" width="1" height="0.75" rotation="0 0 0"></a-video>
+
+            <a-torus position="0 0 0.1" radius="0.48" radius-tubular="0.015" material="color: #10b981; metalness: 0.8; opacity: 0.85; transparent: true"
+                     animation="property: rotation; to: 0 360 360; loop: true; dur: 6000; easing: linear">
+            </a-torus>
+
+            <a-octahedron position="0 0 0.2" radius="0.18" material="color: #9fdbcc; wireframe: true; wireframeLinewidth: 2"
+                          animation="property: rotation; to: 360 360 0; loop: true; dur: 4000; easing: linear">
+            </a-octahedron>
+
+            <a-text id="ar-title-text" value="LIVEMEMORIES VIDEO ACTIVE" position="0 -0.65 0.1" align="center" width="2.2" color="#10b981"
+                    font="kelsonsans"
+                    animation="property: position; to: 0 -0.6 0.15; dir: alternate; loop: true; dur: 1500; easing: easeInOutSine">
+            </a-text>
+
+            <a-light type="point" color="#10b981" intensity="2.5" distance="3" position="0 0 0.5"></a-light>
+          </a-entity>
+        </a-scene>
+      `}} />
+    </>
+  );
+}

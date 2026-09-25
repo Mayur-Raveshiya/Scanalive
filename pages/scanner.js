@@ -4,7 +4,7 @@ import Head from 'next/head';
 export default function ScannerPage() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      window.location.replace(`/ar-lens-engine.html${window.location.search}`);
+      window.location.replace(`/ar-lens-engine${window.location.search}`);
     }
   }, []);
 

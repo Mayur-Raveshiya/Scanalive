@@ -4,8 +4,8 @@
 
 [[redirects]]
   from = "/ar-lens-engine.html"
-  to = "/ar-lens-engine.html"
-  status = 200
+  to = "/ar-lens-engine"
+  status = 301
 
 [[redirects]]
   from = "/*"

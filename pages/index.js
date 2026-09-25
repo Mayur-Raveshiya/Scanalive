@@ -73,7 +73,7 @@ export default function LiveMemoriesApp() {
         }));
       }
 
-      window.location.href = `/ar-lens-engine.html${videoUrlToUse ? `?videoUrl=${encodeURIComponent(videoUrlToUse)}&title=${encodeURIComponent(titleToUse)}` : ''}`;
+      window.location.href = `/ar-lens-engine${videoUrlToUse ? `?videoUrl=${encodeURIComponent(videoUrlToUse)}&title=${encodeURIComponent(titleToUse)}` : ''}`;
     }
   };
 
